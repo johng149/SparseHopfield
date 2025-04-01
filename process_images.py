@@ -87,7 +87,6 @@ def blackout_revolving_lantern(data, noise_level=0.1, right_to_left=False):
     return new_data
 
 def plot_tensors(tensor_dict):
-    # given a dictionary of tensors, plot them, the key will be used as the titles
     num_tensors = len(tensor_dict)
     fig, axes = plt.subplots(1, num_tensors, figsize=(6 * num_tensors, 6))
 
@@ -95,7 +94,9 @@ def plot_tensors(tensor_dict):
         axes = [axes]
 
     for ax, (title, tensor) in zip(axes, tensor_dict.items()):
-        ax.imshow(tensor.squeeze(0), cmap='gray')
+        # Ensure values are between 0 and 1
+        tensor_normalized = torch.clamp(tensor, 0, 1)
+        ax.imshow(tensor_normalized.squeeze(0), cmap='gray')
         ax.set_title(title)
 
     plt.show()
