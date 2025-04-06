@@ -76,30 +76,69 @@ class SparseHopfield(Module):
     return maxied / factors.unsqueeze(-1)
 
   @staticmethod
+  def mark_reserved_indices(acts, usages, trigger_growth, mark=-2):
+    used_values, used_indices = torch.sort(acts, dim=-1)
+    used_values, used_indices
+    reservations = used_indices[:,:,-1:]
+    reservations[trigger_growth] = -1
+    reservations = einops.rearrange(reservations, 'batch mems flag -> mems (batch flag)')
+    sorts, sort_indices = torch.sort(usages, dim=-1)
+    sorts, sort_indices, reservations
+    reservation_mask = reservations != -1
+    expanded_usages = sort_indices.unsqueeze(1).expand(-1, reservations.size(1), -1)
+    expanded_res = reservations.unsqueeze(-1).expand(-1, -1, usages.size(1))
+    matches = (expanded_res == expanded_usages) & reservation_mask.unsqueeze(-1)
+    matches = matches.any(dim=1)
+    return torch.where(matches, -2, sort_indices), sort_indices
+
+  @staticmethod
+  def move_value_to_back(x, value=-2):
+    # moves all instances of `value` in `x` to the right most along the last dim
+    # for example, if x is
+    # [ [-2, 1, 2, 2, 3], [0, -2, 1, -2, 3]]
+    # and value is -2, the result is
+    # [ [1, 2, 2, 3, -2], [0, 1, 3, -2, -2]]
+    # intended to be used with 2d tensors
+    indices = (x == value).argsort(dim=-1, stable=True)
+    return torch.gather(x, -1, indices)
+
+  @staticmethod
+  def expand_for_batches(x, batch_size):
+    nodes, mems = x.shape
+    full_expands = (batch_size // mems) + 1
+    residual = batch_size % mems
+    return x.unsqueeze(0).expand(full_expands, -1, -1).transpose(0, 1).reshape(nodes, -1)[:, :batch_size]
+
+  @staticmethod
   def growth_argmaxi(x, counts, eps=1e-8, threshold=0.9):
     # for now we assume batch_size is 1
     batch_size, nodes, mems = x.shape
     normal_path = SparseHopfield.argmaxi(x, eps)
-    _, indices = torch.min(counts, dim=-1, keepdim=True)
-    indices_sg = indices.unsqueeze(0).expand(batch_size,-1,-1)
+    trigger_growth = torch.sum(x > threshold, dim=-1, keepdim=True) <= 0
+    mark = -2
+    avail, all = SparseHopfield.mark_reserved_indices(normal_path, counts, trigger_growth, mark)
+    avail = SparseHopfield.move_value_to_back(avail, mark)
+    avail = SparseHopfield.expand_for_batches(avail, batch_size)
+    all = SparseHopfield.expand_for_batches(all, batch_size)
+    final = torch.where(avail == mark, all, avail)
+    indices_sg = final.transpose(-1, -2).reshape(batch_size, -1, 1)
     growth_path = torch.zeros_like(normal_path)
-    # values_of_interest = torch.gather(x, -1, indices_sg)
+    values_of_interest = torch.gather(x, -1, indices_sg)
+    values_of_interest[values_of_interest == 0] = 1
     # taking a closer look, it doesn't seem like the exact values from
     # the original should matter, we were just using it to divide
     # by itself (minus an eps) in the argmaxi to turn them into 1s,
     # to just setting it to 1 should be fine?
-    values_of_interest = 1
+    # follow up: No, need the exact values from original. If we don't we
+    # won't break the network, but we will break the gradient flows
+    # and although this network doesn't use backprop, the layers that
+    # occur earlier might want those gradients
     growth_path = torch.scatter(growth_path, -1, indices_sg, values_of_interest)
     growth_path = SparseHopfield.argmaxi(torch.abs(growth_path), eps)
-    trigger_growth = torch.sum(x > threshold, dim=-1, keepdim=True) <= 0
     grown = torch.where(trigger_growth, growth_path, normal_path)
 
-    _, activated_indices = torch.max(grown, dim=-1, keepdim=True)
-    selected_counts = torch.gather(counts.unsqueeze(0).expand(batch_size, -1, -1), -1, activated_indices)
-    zeroed_out_counts = selected_counts * ~trigger_growth
-    updated_counts = torch.scatter(counts.unsqueeze(0).expand(batch_size, -1, -1), -1, activated_indices, zeroed_out_counts)
-    updated_counts = updated_counts + grown
-    updated_counts = einops.reduce(updated_counts, 'batch nodes mems -> nodes mems', 'sum')
+    updated_counts = einops.reduce(grown, 'batch nodes mems -> nodes mems', 'sum')
+    updated_counts = torch.where(updated_counts <= 0, counts, updated_counts)
 
     return grown, updated_counts.detach()
 
@@ -280,11 +319,12 @@ class SparseHopfield(Module):
     with torch.no_grad():
       pred = self.predict(sensory_input, eps, coeff)
       return torch.mean(torch.square(pred - sensory_input))
-    
+      
 def train(net, data):
-    batch_size, fields, dim = data.shape
-    for i in range(batch_size):
-        net.optimize(data[i].unsqueeze(0))
+    net.optimize(data)
+    # batch_size, fields, dim = data.shape
+    # for i in range(batch_size):
+    #     net.optimize(data[i].unsqueeze(0))
 
 def loss(net, data):
     batch_size, fields, dim = data.shape
