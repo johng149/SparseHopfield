@@ -86,6 +86,17 @@ def blackout_revolving_lantern(data, noise_level=0.1, right_to_left=False):
         new_data[:, :, :noise_cols] = torch.zeros_like(new_data[:, :, :noise_cols])
     return new_data
 
+def blackout_half(data, right=False):
+    # blacks out either the left or right half of the image
+    batch, rows, cols = data.shape
+    new_data = data.clone()
+    midpoint = cols // 2
+    if right:
+        new_data[:, :, midpoint:] = torch.zeros_like(new_data[:, :, midpoint:])
+    else:
+        new_data[:, :, :midpoint] = torch.zeros_like(new_data[:, :, :midpoint])
+    return new_data
+
 def plot_tensors(tensor_dict):
     num_tensors = len(tensor_dict)
     fig, axes = plt.subplots(1, num_tensors, figsize=(6 * num_tensors, 6))
