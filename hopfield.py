@@ -78,7 +78,6 @@ class SparseHopfield(Module):
   @staticmethod
   def mark_reserved_indices(acts, usages, trigger_growth, mark=-2):
     used_values, used_indices = torch.sort(acts, dim=-1)
-    used_values, used_indices
     reservations = used_indices[:,:,-1:]
     reservations[trigger_growth] = -1
     reservations = einops.rearrange(reservations, 'batch mems flag -> mems (batch flag)')
@@ -89,7 +88,7 @@ class SparseHopfield(Module):
     expanded_res = reservations.unsqueeze(-1).expand(-1, -1, usages.size(1))
     matches = (expanded_res == expanded_usages) & reservation_mask.unsqueeze(-1)
     matches = matches.any(dim=1)
-    return torch.where(matches, -2, sort_indices), sort_indices
+    return torch.where(matches, mark, sort_indices), sort_indices
 
   @staticmethod
   def move_value_to_back(x, value=-2):
