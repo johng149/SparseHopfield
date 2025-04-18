@@ -16,9 +16,17 @@ def image_chunking(img: Image.Image, chunk_length: int, chunks_per_row: int, num
     tensor = F.to_tensor(img)
     return tensor.squeeze()
 
-def process_images(imgs: List[Image.Image], chunk_length: int, chunks_per_row: int, num_rows: int) -> Tensor:
+def process_images(imgs: List[Image.Image], chunk_length: int, chunks_per_row: int, num_rows: int, noise_level: float = 0.0, noise_sample: int = 1) -> Tensor:
     tensors = [image_chunking(img, chunk_length, chunks_per_row, num_rows) for img in imgs]
-    return torch.stack(tensors)
+    tensor = torch.stack(tensors)
+    if noise_level > 0.0:
+        new_tensor = []
+        for i in range(noise_sample):
+            noise = torch.randn_like(tensor) * noise_level
+            new_tensor.append(torch.clamp(tensor + noise, 0, 1))
+        tensor = torch.cat(new_tensor)
+        return tensor
+    return tensor
 
 def images_in_path(path: Path | str, extensions: Iterable[str] = ('.jpg', '.png')) -> List[Image.Image]:
     if isinstance(path, str):
