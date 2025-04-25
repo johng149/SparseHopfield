@@ -54,7 +54,7 @@ class SparseHopfield(Module):
       else:
         nodes, mems = self.layers_info[i]
         prev_nodes, prev_mems = self.layers_info[i - 1]
-        assert prev_nodes % nodes == 0, f"At layer {i}, prev is {prev_nodes} but nodes is {nodes}"
+        assert prev_nodes % nodes == 0, f"At layer {i}, prev is {prev_nodes} but nodes is {nodes}. Cannot divide evenly"
         children_per_node = prev_nodes // nodes
         counts = torch.ones(nodes, mems)
         mem_matrix = Parameter(torch.zeros((nodes, children_per_node, mems, prev_mems)), requires_grad=False)
